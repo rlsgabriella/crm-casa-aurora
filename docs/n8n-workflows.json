@@ -1,0 +1,25 @@
+{
+  "_comment": "Referência dos fluxos n8n utilizados pelo CRM Restaurante",
+  "workflows": [
+    {
+      "name": "WhatsApp Incoming - WAHA",
+      "trigger": "POST /api/webhooks/waha",
+      "description": "Recebe mensagens do WhatsApp via WAHA e encaminha para a Sofia (IA) ou atendente humano"
+    },
+    {
+      "name": "Sofia Response Handler",
+      "trigger": "POST /api/webhooks/n8n/response",
+      "description": "Recebe resposta da Sofia com tokens: RESERVA_JSON, CONSULTA_RESERVA, ATENDENTE_HUMANO"
+    },
+    {
+      "name": "Landing Page Reserva",
+      "trigger": "POST /api/webhooks/reserva-landing",
+      "description": "Recebe nova reserva criada na landing page do Casa Aurora"
+    }
+  ],
+  "tokens": {
+    "RESERVA_JSON": "Indica que a Sofia coletou dados para criar uma reserva",
+    "CONSULTA_RESERVA": "Indica que o cliente quer consultar sua reserva",
+    "ATENDENTE_HUMANO": "Indica que o cliente pediu para falar com humano"
+  }
+}

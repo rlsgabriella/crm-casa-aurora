@@ -1,0 +1,14 @@
+{
+  "name": "crm-restaurante",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/api",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=packages/api",
+    "dev:dashboard": "npm run dev --workspace=packages/dashboard",
+    "install:all": "npm install"
+  }
+}

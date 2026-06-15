@@ -1,0 +1,325 @@
+// This is your Prisma schema file.
+// Schema mestre do CRM Restaurante — contém tabelas existentes do Casa Aurora + tabelas novas do CRM.
+// IMPORTANTE: rode `npx prisma db pull` antes de qualquer db push para sincronizar com o Supabase real.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// TABELAS EXISTENTES DO CASA AURORA — não alterar estrutura
+// Estes models refletem o que já existe no Supabase.
+// Rode `prisma db pull` para substituir por definições precisas.
+// ---------------------------------------------------------------------------
+
+/// Tabela existente do Casa Aurora — não alterar estrutura
+model User {
+  id           String   @id @default(cuid())
+  clerkId      String   @unique
+  nome         String?
+  email        String   @unique
+  telefone     String?
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  // Relações com tabelas do CRM
+  reservas    Reserva[]
+  conversas   Conversa[]
+  pedidos     Pedido[]
+
+  @@map("usuarios")
+}
+
+/// Tabela existente do Casa Aurora — não alterar estrutura
+model Mesa {
+  id           String      @id @default(cuid())
+  numero       Int         @unique
+  capacidade   Int
+  status       String      @default("disponivel")
+  descricao    String?
+  criadoEm    DateTime    @default(now())
+  atualizadoEm DateTime   @updatedAt
+
+  // Relações com tabelas do CRM
+  reservas    Reserva[]
+  pedidos     Pedido[]
+
+  @@map("mesas")
+}
+
+/// Tabela existente do Casa Aurora — não alterar estrutura
+model Reserva {
+  id               String   @id @default(cuid())
+  clienteId        String
+  mesaId           String?
+  data             DateTime
+  horario          String
+  numPessoas       Int
+  status           String   @default("pendente")
+  observacoes      String?
+  stripePaymentId  String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  cliente     User    @relation(fields: [clienteId], references: [id])
+  mesa        Mesa?   @relation(fields: [mesaId], references: [id])
+  pagamentos  Pagamento[]
+
+  @@map("reservas")
+}
+
+// ---------------------------------------------------------------------------
+// TABELAS NOVAS DO CRM RESTAURANTE
+// ---------------------------------------------------------------------------
+
+model Restaurante {
+  id        String   @id @default(cuid())
+  nome      String
+  endereco  String?
+  telefone  String?
+  cnpj      String?  @unique
+  criadoEm DateTime @default(now())
+
+  conversas           Conversa[]
+  atendentes          Atendente[]
+  pedidos             Pedido[]
+  produtos            Produto[]
+  insumos             Insumo[]
+  pagamentos          Pagamento[]
+  segmentos           Segmento[]
+}
+
+enum CanalConversa {
+  whatsapp
+  web
+}
+
+enum StatusConversa {
+  aberta
+  aguardando
+  fechada
+}
+
+model Conversa {
+  id            String         @id @default(cuid())
+  restauranteId String
+  clienteId     String
+  atendenteId   String?
+  canal         CanalConversa  @default(whatsapp)
+  status        StatusConversa @default(aberta)
+  iniciadaEm   DateTime       @default(now())
+  finalizadaEm DateTime?
+  deletedAt     DateTime?
+  criadoEm     DateTime       @default(now())
+  atualizadoEm DateTime       @updatedAt
+
+  restaurante Restaurante @relation(fields: [restauranteId], references: [id])
+  cliente     User        @relation(fields: [clienteId], references: [id])
+  atendente   Atendente?  @relation(fields: [atendenteId], references: [id])
+  mensagens   Mensagem[]
+}
+
+enum RemetenteMsg {
+  cliente
+  bot
+  atendente
+}
+
+enum TipoMensagem {
+  texto
+  imagem
+  audio
+  documento
+}
+
+model Mensagem {
+  id          String       @id @default(cuid())
+  conversaId  String
+  remetente   RemetenteMsg
+  conteudo    String
+  tipo        TipoMensagem @default(texto)
+  enviadaEm  DateTime     @default(now())
+
+  conversa Conversa @relation(fields: [conversaId], references: [id])
+}
+
+enum RoleAtendente {
+  admin
+  gerente
+  garcom
+  atendente
+}
+
+enum StatusAtendente {
+  online
+  offline
+  pausa
+}
+
+model Atendente {
+  id                String          @id @default(cuid())
+  restauranteId     String
+  clerkUserId       String          @unique
+  nome              String
+  role              RoleAtendente   @default(atendente)
+  status            StatusAtendente @default(offline)
+  atendimentosAtivos Int            @default(0)
+  deletedAt         DateTime?
+  criadoEm         DateTime        @default(now())
+  atualizadoEm     DateTime        @updatedAt
+
+  restaurante Restaurante @relation(fields: [restauranteId], references: [id])
+  conversas   Conversa[]
+  pedidos     Pedido[]
+}
+
+enum StatusPedido {
+  recebido
+  preparando
+  pronto
+  entregue
+  cancelado
+}
+
+model Pedido {
+  id            String       @id @default(cuid())
+  restauranteId String
+  clienteId     String?
+  mesaId        String?
+  atendenteId   String?
+  status        StatusPedido @default(recebido)
+  total         Decimal      @db.Decimal(10, 2)
+  observacoes   String?
+  deletedAt     DateTime?
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+
+  restaurante Restaurante  @relation(fields: [restauranteId], references: [id])
+  cliente     User?        @relation(fields: [clienteId], references: [id])
+  mesa        Mesa?        @relation(fields: [mesaId], references: [id])
+  atendente   Atendente?   @relation(fields: [atendenteId], references: [id])
+  itens       ItemPedido[]
+  pagamentos  Pagamento[]
+  movimentacoes MovimentacaoEstoque[]
+}
+
+model ItemPedido {
+  id             String  @id @default(cuid())
+  pedidoId       String
+  produtoId      String
+  quantidade     Int
+  precoUnitario  Decimal @db.Decimal(10, 2)
+  observacoes    String?
+
+  pedido  Pedido  @relation(fields: [pedidoId], references: [id])
+  produto Produto @relation(fields: [produtoId], references: [id])
+}
+
+model Produto {
+  id            String   @id @default(cuid())
+  restauranteId String
+  nome          String
+  descricao     String?
+  preco         Decimal  @db.Decimal(10, 2)
+  categoria     String?
+  ativo         Boolean  @default(true)
+  deletedAt     DateTime?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  restaurante   Restaurante    @relation(fields: [restauranteId], references: [id])
+  itens         ItemPedido[]
+  fichasTecnicas FichaTecnica[]
+}
+
+model Insumo {
+  id                String   @id @default(cuid())
+  restauranteId     String
+  nome              String
+  unidade           String
+  quantidadeAtual   Decimal  @db.Decimal(10, 3)
+  quantidadeMinima  Decimal  @db.Decimal(10, 3)
+  deletedAt         DateTime?
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+
+  restaurante     Restaurante           @relation(fields: [restauranteId], references: [id])
+  fichasTecnicas  FichaTecnica[]
+  movimentacoes   MovimentacaoEstoque[]
+}
+
+model FichaTecnica {
+  id                   String  @id @default(cuid())
+  produtoId            String
+  insumoId             String
+  quantidadePorUnidade Decimal @db.Decimal(10, 3)
+
+  produto Produto @relation(fields: [produtoId], references: [id])
+  insumo  Insumo  @relation(fields: [insumoId], references: [id])
+
+  @@unique([produtoId, insumoId])
+}
+
+enum TipoMovimentacao {
+  entrada
+  saida
+}
+
+model MovimentacaoEstoque {
+  id         String           @id @default(cuid())
+  insumoId   String
+  tipo       TipoMovimentacao
+  quantidade Decimal          @db.Decimal(10, 3)
+  motivo     String?
+  pedidoId   String?
+  criadoEm  DateTime         @default(now())
+
+  insumo Insumo  @relation(fields: [insumoId], references: [id])
+  pedido Pedido? @relation(fields: [pedidoId], references: [id])
+}
+
+enum MetodoPagamento {
+  pix
+  cartao
+  dinheiro
+}
+
+enum StatusPagamento {
+  pendente
+  confirmado
+  estornado
+}
+
+model Pagamento {
+  id            String          @id @default(cuid())
+  restauranteId String
+  pedidoId      String?
+  reservaId     String?
+  valor         Decimal         @db.Decimal(10, 2)
+  metodo        MetodoPagamento
+  status        StatusPagamento @default(pendente)
+  externalId    String?
+  deletedAt     DateTime?
+  criadoEm     DateTime        @default(now())
+  atualizadoEm DateTime        @updatedAt
+
+  restaurante Restaurante @relation(fields: [restauranteId], references: [id])
+  pedido      Pedido?     @relation(fields: [pedidoId], references: [id])
+  reserva     Reserva?    @relation(fields: [reservaId], references: [id])
+}
+
+model Segmento {
+  id            String   @id @default(cuid())
+  restauranteId String
+  nome          String
+  descricao     String?
+  filtros       Json?
+  criadoEm     DateTime @default(now())
+
+  restaurante Restaurante @relation(fields: [restauranteId], references: [id])
+}

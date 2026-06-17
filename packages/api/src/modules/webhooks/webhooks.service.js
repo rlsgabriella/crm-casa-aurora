@@ -1,75 +1,154 @@
 import prisma from '../../lib/prisma.js'
-import { enviarMensagem } from '../../lib/waha.js'
+import { atribuirConversaAuto } from '../conversas/conversas.service.js'
 
-export async function processarMensagemWaha(payload) {
-  const { from, body, session } = payload
+const DEFAULT_RESTAURANTE_ID = process.env.DEFAULT_RESTAURANTE_ID || ''
 
-  // Normaliza telefone (remove @c.us se vier)
-  const telefone = from?.replace('@c.us', '') || ''
+function normalizarTelefone(chatId) {
+  // Remove sufixos do WhatsApp (@c.us, @lid, @g.us)
+  let tel = chatId.replace(/@[\w.]+$/, '').trim()
+  // Normaliza para formato +55XXXXXXXX
+  if (!tel.startsWith('+')) tel = `+${tel}`
+  return tel
+}
 
-  // Busca ou cria cliente
+async function buscarOuCriarCliente(telefone) {
   let cliente = await prisma.user.findFirst({ where: { telefone } })
+  if (!cliente) {
+    cliente = await prisma.user.create({
+      data: {
+        clerkId: `whatsapp_${telefone}_${Date.now()}`,
+        email: `${telefone.replace(/\D/g, '')}@whatsapp.temp`,
+        telefone,
+        nome: `WhatsApp ${telefone}`,
+      },
+    })
+  }
+  return cliente
+}
 
-  // Busca conversa aberta para esse cliente
-  let conversa = cliente
-    ? await prisma.conversa.findFirst({
-        where: { clienteId: cliente.id, status: { in: ['aberta', 'aguardando'] } },
-      })
-    : null
-
-  if (!conversa && cliente) {
+async function buscarOuCriarConversa(clienteId) {
+  let conversa = await prisma.conversa.findFirst({
+    where: { clienteId, status: { in: ['aberta', 'aguardando'] } },
+  })
+  if (!conversa) {
     conversa = await prisma.conversa.create({
       data: {
-        restauranteId: process.env.DEFAULT_RESTAURANTE_ID || 'default',
-        clienteId: cliente.id,
+        restauranteId: DEFAULT_RESTAURANTE_ID,
+        clienteId,
         canal: 'whatsapp',
         status: 'aberta',
       },
     })
   }
+  return conversa
+}
 
-  if (conversa) {
+export async function processarMensagemWaha(payload) {
+  const { from, body, session } = payload
+  if (!from || !body) return { ok: false, erro: 'Payload inválido' }
+
+  const telefone = normalizarTelefone(from)
+  const cliente = await buscarOuCriarCliente(telefone)
+  const conversa = await buscarOuCriarConversa(cliente.id)
+
+  const mensagem = await prisma.mensagem.create({
+    data: {
+      conversaId: conversa.id,
+      remetente: 'cliente',
+      conteudo: body,
+      tipo: 'texto',
+    },
+  })
+
+  // Atribuição automática se não tem atendente
+  if (!conversa.atendenteId) {
+    await atribuirConversaAuto(conversa.id).catch(err => {
+      console.error('[WAHA webhook] Falha na atribuição automática:', err.message)
+    })
+  }
+
+  // Atualizar timestamp da conversa
+  await prisma.conversa.update({
+    where: { id: conversa.id },
+    data: { atualizadoEm: new Date() },
+  })
+
+  return { ok: true, conversaId: conversa.id, mensagemId: mensagem.id }
+}
+
+export async function processarRespostaN8n(payload) {
+  const { conteudo, telefone, conversaId } = payload
+
+  // Resolve a conversa pelo conversaId ou pelo telefone do cliente
+  let conversa
+  if (conversaId) {
+    conversa = await prisma.conversa.findUnique({ where: { id: conversaId } })
+  } else if (telefone) {
+    const tel = normalizarTelefone(telefone)
+    conversa = await prisma.conversa.findFirst({
+      where: { cliente: { telefone: tel }, status: { in: ['aberta', 'aguardando'] } },
+    })
+  }
+
+  if (!conversa) return { ok: false, erro: 'Conversa não encontrada' }
+
+  // Verifica tokens especiais no conteúdo
+  if (conteudo?.includes('ATENDENTE_HUMANO')) {
+    await prisma.conversa.update({
+      where: { id: conversa.id },
+      data: { status: 'aguardando' },
+    })
+
     await prisma.mensagem.create({
       data: {
         conversaId: conversa.id,
-        remetente: 'cliente',
-        conteudo: body,
+        remetente: 'bot',
+        conteudo: 'Transferindo para atendente humano...',
         tipo: 'texto',
       },
     })
+
+    const resultado = await atribuirConversaAuto(conversa.id)
+    return { ok: true, acao: 'aguardando_humano', atendente: resultado?.atendente ?? null }
   }
 
-  return { ok: true, conversaId: conversa?.id }
-}
-
-export async function processarRespostaN8n({ token, dados, telefone }) {
-  if (token === 'RESERVA_JSON') {
-    const reserva = await prisma.reserva.create({ data: dados })
-    return { ok: true, acao: 'reserva_criada', reservaId: reserva.id }
-  }
-
-  if (token === 'CONSULTA_RESERVA') {
-    const reservas = await prisma.reserva.findMany({
-      where: { cliente: { telefone } },
-      orderBy: { data: 'desc' },
-      take: 3,
-    })
-    return { ok: true, acao: 'consulta_reserva', reservas }
-  }
-
-  if (token === 'ATENDENTE_HUMANO') {
-    if (telefone) {
-      const conversa = await prisma.conversa.findFirst({
-        where: { cliente: { telefone }, status: { in: ['aberta', 'aguardando'] } },
-      })
-      if (conversa) {
-        await prisma.conversa.update({ where: { id: conversa.id }, data: { status: 'aguardando' } })
+  if (conteudo?.includes('RESERVA_JSON')) {
+    const match = conteudo.match(/RESERVA_JSON:(\{.*?\})/s)
+    if (match) {
+      try {
+        const dados = JSON.parse(match[1])
+        const reserva = await prisma.reserva.create({ data: dados })
+        await prisma.mensagem.create({
+          data: {
+            conversaId: conversa.id,
+            remetente: 'bot',
+            conteudo: `Reserva confirmada para ${dados.data ?? '—'}!`,
+            tipo: 'texto',
+          },
+        })
+        return { ok: true, acao: 'reserva_criada', reservaId: reserva.id }
+      } catch (e) {
+        console.error('[n8n] Falha ao criar reserva do JSON:', e.message)
       }
     }
-    return { ok: true, acao: 'aguardando_humano' }
   }
 
-  return { ok: false, erro: 'Token desconhecido' }
+  // Resposta normal da Sofia
+  await prisma.mensagem.create({
+    data: {
+      conversaId: conversa.id,
+      remetente: 'bot',
+      conteudo: conteudo ?? '',
+      tipo: 'texto',
+    },
+  })
+
+  await prisma.conversa.update({
+    where: { id: conversa.id },
+    data: { atualizadoEm: new Date() },
+  })
+
+  return { ok: true, acao: 'mensagem_bot_salva' }
 }
 
 export async function processarReservaLanding(dados) {

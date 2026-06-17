@@ -1,4 +1,4 @@
-# CRM Restaurante — Contexto do Projeto
+# CRM Casa Aurora — Contexto do Projeto
 
 ## Visão geral
 
@@ -14,7 +14,7 @@ Casa Aurora (projeto existente, repo separado)
 
 CRM Restaurante (ESTE PROJETO)
   → App da EQUIPE INTERNA: dashboard, inbox WhatsApp, pedidos, estoque, financeiro
-  → Stack: React + Vite, Node + Express, Clerk, Prisma, Supabase
+  → Stack: Next.js 14 App Router + TypeScript, Node + Express, Clerk, Prisma, Supabase
   → Roda em: localhost:5174 (dashboard) + localhost:3334 (api)
 
 Infraestrutura compartilhada (Docker Compose no repo do Casa Aurora)
@@ -63,22 +63,27 @@ Tabelas novas do CRM (criar):
 
 ## Tech stack
 
-### Backend (API do CRM)
+### Backend (packages/api)
 - Node.js + Express 4 (ESM — `"type": "module"`)
 - Prisma ORM com PostgreSQL (Supabase compartilhado)
 - Clerk para autenticação (roles: admin, gerente, garcom, atendente)
 - Zod para validação de request bodies
-- Porta: 3334 (diferente da API do Casa Aurora em 3333)
+- Linguagem: JavaScript ESM (sem TypeScript no backend)
+- Porta: 3334
 
-### Frontend (Dashboard)
-- React 18 + Vite
-- React Router DOM v6
-- Clerk para auth (`@clerk/clerk-react`)
-- Tailwind CSS
+### Dashboard (packages/dashboard)
+- **Next.js 14** com App Router
+- **TypeScript** em todos os arquivos (`.ts` / `.tsx`)
+- `@clerk/nextjs` — auth + middleware
+- Clerk App ID: `app_3FBcLW2tzcrEuZocg0iJEuudQfA` (app separado do Casa Aurora)
+- Tailwind CSS v4 via `@tailwindcss/postcss`
 - Lucide React para ícones
-- Recharts para gráficos/métricas
-- Supabase Realtime para inbox ao vivo (conversas WhatsApp)
-- Porta: 5174 (diferente do Casa Aurora em 5173)
+- Recharts para gráficos
+- Supabase Realtime para inbox ao vivo (Fase 2)
+- Fontes: **Playfair Display** (títulos/valores) + **DM Sans** (corpo) via `next/font/google`
+- Tema: dark fixo — fundo `#0F0A0A`, cards `#1F1515`, accent terracota `#C0603A`, dourado `#C9A84C`
+- Proxy API: rewrite no `next.config.js` (`/api/*` → `http://localhost:3334/api/*`)
+- Porta: 5174 (explícito para não conflitar com WAHA na 3000)
 
 ### Automação (já existente, repo do Casa Aurora)
 - n8n (porta 5678) — motor de automação
@@ -89,7 +94,7 @@ Tabelas novas do CRM (criar):
 
 ## Convenções de código
 
-### Backend
+### Backend (packages/api)
 - ESM imports (`import/export`, nunca `require`)
 - Async/await em todos os handlers
 - Middleware de erro centralizado em `src/middleware/errorHandler.js`
@@ -99,12 +104,17 @@ Tabelas novas do CRM (criar):
 - Rotas em português: `/api/clientes`, `/api/reservas`, `/api/pedidos`, `/api/conversas`
 - Webhooks do n8n usam prefixo `/api/webhooks/`
 
-### Frontend
-- Componentes funcionais com hooks
-- Custom hooks para lógica compartilhada (ex: `useIsAdmin`, `useClientes`)
-- Pastas: `components/`, `pages/`, `hooks/`, `lib/`, `layouts/`
-- Clerk `useAuth()` e `useUser()` para contexto de auth
-- API calls via wrapper em `lib/api.js` com baseURL e token automático
+### Dashboard (packages/dashboard)
+- **TypeScript obrigatório** — sem arquivos `.jsx` ou `.js`
+- Componentes funcionais com hooks; `'use client'` explícito onde necessário (interatividade/hooks)
+- Pages sem `'use client'` são Server Components por padrão
+- Imports usam alias `@/` (configurado no `tsconfig.json` → `"@/*": ["./*"]`)
+- Interfaces tipadas em todos os componentes de UI
+- Custom hooks em `hooks/` com tipos de retorno explícitos
+- API calls via `lib/api.ts` (`createApi`) com generics: `api.get<T>(path)`
+- Resposta padrão: `ApiResponse<T> = { success, data: T, error? }`
+- Auth: `useUser()` para dados do usuário e metadata, `useAuth()` para token
+- Role do usuário: `user?.publicMetadata?.role` (não sessionClaims)
 
 ### Prisma
 - Models em PascalCase singular: `Cliente`, `Reserva`, `Mesa`, `Pedido`
@@ -121,11 +131,11 @@ Tabelas novas do CRM (criar):
 ## Estrutura de pastas
 
 ```
-crm-restaurante/
-├── CLAUDE.md
+crm-casa-aurora/
+├── claude.md                   # Este arquivo
 ├── package.json                # Workspace root (npm workspaces)
 ├── docs/
-│   └── n8n-workflows.json      # Referência dos fluxos do n8n
+│   └── n8n-workflows.json
 ├── packages/
 │   ├── api/                    # Backend Express — porta 3334
 │   │   ├── prisma/
@@ -133,59 +143,79 @@ crm-restaurante/
 │   │   ├── src/
 │   │   │   ├── index.js
 │   │   │   ├── modules/
-│   │   │   │   ├── clientes/       # CRUD + histórico unificado
-│   │   │   │   ├── reservas/       # Leitura e gestão (criação vem do Casa Aurora)
-│   │   │   │   ├── mesas/          # Visualização e status em tempo real
-│   │   │   │   ├── conversas/      # Inbox WhatsApp
-│   │   │   │   ├── mensagens/      # Mensagens dentro de conversas
-│   │   │   │   ├── pedidos/        # Gestão de pedidos
-│   │   │   │   ├── produtos/       # Cardápio e produtos
-│   │   │   │   ├── estoque/        # Insumos e movimentações
-│   │   │   │   ├── pagamentos/     # Financeiro
-│   │   │   │   ├── equipe/         # Atendentes e métricas
-│   │   │   │   └── webhooks/       # Endpoints para n8n e WAHA
+│   │   │   │   ├── clientes/
+│   │   │   │   ├── reservas/
+│   │   │   │   ├── mesas/
+│   │   │   │   ├── conversas/
+│   │   │   │   ├── mensagens/
+│   │   │   │   ├── pedidos/
+│   │   │   │   ├── produtos/
+│   │   │   │   ├── estoque/
+│   │   │   │   ├── pagamentos/
+│   │   │   │   ├── equipe/
+│   │   │   │   └── webhooks/
 │   │   │   ├── middleware/
 │   │   │   │   ├── auth.js
 │   │   │   │   ├── errorHandler.js
 │   │   │   │   └── validate.js
 │   │   │   └── lib/
-│   │   │       ├── prisma.js       # PrismaClient singleton
-│   │   │       ├── resend.js       # Emails transacionais
-│   │   │       ├── waha.js         # Helper WhatsApp (WAHA API)
-│   │   │       ├── n8n.js          # Triggers para workflows n8n
-│   │   │       └── calendar.js     # Google Calendar
+│   │   │       ├── prisma.js
+│   │   │       ├── resend.js
+│   │   │       ├── waha.js
+│   │   │       ├── n8n.js
+│   │   │       └── calendar.js
 │   │   ├── package.json
 │   │   └── .env
-│   └── dashboard/              # Frontend React — porta 5174
-│       ├── src/
-│       │   ├── main.jsx
-│       │   ├── App.jsx
-│       │   ├── components/
-│       │   │   ├── ui/
-│       │   │   └── layout/
-│       │   ├── pages/
-│       │   │   ├── Dashboard.jsx
-│       │   │   ├── Clientes.jsx
-│       │   │   ├── Reservas.jsx
-│       │   │   ├── Atendimento.jsx
-│       │   │   ├── Pedidos.jsx
-│       │   │   ├── Estoque.jsx
-│       │   │   ├── Financeiro.jsx
-│       │   │   └── Equipe.jsx
-│       │   ├── hooks/
-│       │   ├── lib/
-│       │   └── layouts/
+│   └── dashboard/              # Next.js 14 App Router — porta 5174
+│       ├── app/
+│       │   ├── globals.css             # Tailwind v4 + CSS vars da paleta
+│       │   ├── layout.tsx              # ClerkProvider + fontes
+│       │   ├── page.tsx                # Redirect → /dashboard
+│       │   ├── sign-in/[[...sign-in]]/
+│       │   ├── sign-up/[[...sign-up]]/
+│       │   └── dashboard/
+│       │       ├── layout.tsx          # Sidebar Casa Aurora
+│       │       ├── page.tsx            # Visão geral (StatCards + reservas)
+│       │       ├── clientes/page.tsx
+│       │       ├── reservas/page.tsx
+│       │       ├── mesas/page.tsx
+│       │       ├── atendimento/page.tsx
+│       │       ├── pedidos/page.tsx
+│       │       ├── estoque/page.tsx
+│       │       ├── financeiro/page.tsx
+│       │       └── equipe/page.tsx
+│       ├── components/
+│       │   └── ui/                     # 9 componentes .tsx tipados
+│       │       ├── Badge.tsx
+│       │       ├── Button.tsx
+│       │       ├── Card.tsx
+│       │       ├── EmptyState.tsx
+│       │       ├── Input.tsx
+│       │       ├── Modal.tsx
+│       │       ├── PageHeader.tsx
+│       │       ├── StatCard.tsx
+│       │       └── Table.tsx
+│       ├── hooks/
+│       │   ├── useApi.ts               # Generic hook: useApi<T>(path, deps?)
+│       │   └── useIsAdmin.ts           # Retorna { isAdmin, isLoaded }
+│       ├── lib/
+│       │   └── api.ts                  # createApi + ApiResponse<T>
+│       ├── middleware.ts               # Clerk auth matcher
+│       ├── next.config.js              # Rewrite /api → localhost:3334
 │       ├── package.json
-│       ├── vite.config.js
-│       └── tailwind.config.js
+│       ├── postcss.config.js
+│       └── tsconfig.json              # paths: { "@/*": ["./*"] }
 └── .gitignore
 ```
 
 ## Fases de implementação
 
-**Fase 1 — Fundação**: API + schema (db pull + novas tabelas) + módulos Cliente, Reserva, Mesa (leitura dos dados existentes) + dashboard mínimo com visualização
+**Fase 1 — Fundação** ✅: API + schema (db pull + novas tabelas) + módulos Cliente, Reserva, Mesa + dashboard com tema dark Casa Aurora + StatCards + PageHeader
+
 **Fase 2 — Atendimento**: Conversa, Mensagem, Equipe + inbox WhatsApp no dashboard + distribuição automática + webhooks WAHA
+
 **Fase 3 — Operação**: Pedido, Produto, Estoque + baixa automática + notificações via n8n
+
 **Fase 4 — Financeiro**: Pagamento + integração NF-e + relatórios
 
 ## Tabelas novas do CRM (resumo)

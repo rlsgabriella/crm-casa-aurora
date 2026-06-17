@@ -8,6 +8,8 @@ import { errorHandler } from './middleware/errorHandler.js'
 import clientesRoutes from './modules/clientes/clientes.routes.js'
 import reservasRoutes from './modules/reservas/reservas.routes.js'
 import mesasRoutes from './modules/mesas/mesas.routes.js'
+import conversasRoutes from './modules/conversas/conversas.routes.js'
+import equipeRoutes from './modules/equipe/equipe.routes.js'
 import webhooksRoutes from './modules/webhooks/webhooks.routes.js'
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js'
 
@@ -24,6 +26,8 @@ app.get('/health', (_req, res) => res.json({ ok: true, service: 'crm-api', port:
 app.use('/api/clientes', clientesRoutes)
 app.use('/api/reservas', reservasRoutes)
 app.use('/api/mesas', mesasRoutes)
+app.use('/api/conversas', conversasRoutes)
+app.use('/api/atendentes', equipeRoutes)
 app.use('/api/webhooks', webhooksRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 

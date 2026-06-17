@@ -1,7 +1,22 @@
 @import "tailwindcss";
 
-:root {
-  font-family: 'DM Sans', sans-serif;
+@theme {
+  /* Paleta Casa Aurora — tema dark admin */
+  --color-bg: #0F0A0A;
+  --color-sidebar: #1A1010;
+  --color-card: #1F1515;
+  --color-line: #2A1F1F;
+  --color-foreground: #F0E8E0;
+  --color-muted: #8A7A72;
+  --color-accent: #C0603A;
+  --color-gold: #C9A84C;
+  --color-bordeaux: #7B1F3A;
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-playfair, 'Playfair Display', Georgia, serif);
+  }
 }
 
 * {
@@ -10,6 +25,13 @@
 
 body {
   margin: 0;
-  background-color: #f3f4f6;
-  color: #111827;
+  background-color: #0F0A0A;
+  color: #F0E8E0;
+  font-family: var(--font-dm-sans, 'DM Sans', system-ui, sans-serif);
 }
+
+/* Scrollbar customizado */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #0F0A0A; }
+::-webkit-scrollbar-thumb { background: #2A1F1F; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3A2A2A; }

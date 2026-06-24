@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { MessageSquare } from 'lucide-react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { createApi } from '@/lib/api'
@@ -8,7 +8,7 @@ import { ChatHeader } from './ChatHeader'
 import { ChatMessages, type Mensagem } from './ChatMessages'
 import { ChatInput } from './ChatInput'
 import { TransferModal } from './TransferModal'
-import { useRealtimeMessages } from '@/hooks/useRealtimeMessages'
+import { useRealtimeMessages, type RealtimeMensagem } from '@/hooks/useRealtimeMessages'
 import type { ConversaItem } from './ConversaCard'
 
 interface ChatPanelProps {
@@ -27,7 +27,15 @@ export function ChatPanel({ conversa, onConversaUpdate, onFechar }: ChatPanelPro
   const [atendentes, setAtendentes] = useState<any[]>([])
   const [transferOpen, setTransferOpen] = useState(false)
 
-  const { newMessages } = useRealtimeMessages(conversa?.id ?? null)
+  // fetchFn estável por conversaId para o polling fallback do hook
+  const fetchFn = useCallback(async (): Promise<RealtimeMensagem[]> => {
+    if (!conversa) return []
+    const res = await api.get<Mensagem[]>(`/conversas/${conversa.id}/mensagens`)
+    return (res.data ?? []) as RealtimeMensagem[]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversa?.id])
+
+  const { newMessages } = useRealtimeMessages(conversa?.id ?? null, fetchFn)
 
   // Carregar mensagens ao trocar de conversa
   useEffect(() => {

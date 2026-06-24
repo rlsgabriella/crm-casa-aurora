@@ -1,0 +1,389 @@
+{
+  "name": "WAHA → Sofia + CRM Restaurante",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "menu-cliente",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0001-4001-8001-000000000001",
+      "name": "Webhook Menu Cliente",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "webhookId": "menu-cliente-waha"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// WAHA envia em dois formatos possíveis:\n// Formato 1: { event: 'message', payload: { from, body, notifyName, fromMe } }\n// Formato 2: { from, body, notifyName } (direto, sem payload aninhado)\nconst payload = item.payload || item;\n\nconst chatId = payload.from || payload.chatId || '';\nconst mensagem = payload.body || payload.text || payload.mensagem || '';\nconst nome = payload.notifyName || payload._data?.notifyName || chatId.replace(/@[\\w.]+$/, '');\n\n// Ignorar grupos, mensagens de si mesmo ou vazias\nif (!mensagem || !chatId || chatId.includes('@g.us') || payload.fromMe === true) {\n  return [];\n}\n\nreturn [{ json: { chatId, mensagem, nome } }];"
+      },
+      "id": "f1a2b3c4-0002-4001-8001-000000000002",
+      "name": "Extrair Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3334/api/webhooks/waha",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $json.chatId, body: $json.mensagem, session: 'default' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "f1a2b3c4-0003-4001-8001-000000000003",
+      "name": "Registrar no CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.data.temAtendente }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "f1a2b3c4-0004-4001-8001-000000000004",
+      "name": "Tem Atendente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "={{ 'historico:' + $('Extrair Mensagem').first().json.chatId }}"
+      },
+      "id": "f1a2b3c4-0005-4001-8001-000000000005",
+      "name": "Redis GET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1160, 300],
+      "credentials": {
+        "redis": {
+          "id": "83G677gqgZUn1I8v",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const redisResult = $input.first().json;\nconst extracao = $('Extrair Mensagem').first().json;\n\nlet historico = [];\ntry {\n  if (redisResult.value) {\n    const parsed = JSON.parse(redisResult.value);\n    historico = Array.isArray(parsed) ? parsed : [];\n  }\n} catch {\n  historico = [];\n}\n\n// Manter últimas 20 mensagens para não estourar contexto do Gemini\nif (historico.length > 20) {\n  historico = historico.slice(-20);\n}\n\nreturn [{\n  json: {\n    chatId: extracao.chatId,\n    mensagem: extracao.mensagem,\n    nome: extracao.nome,\n    historico\n  }\n}];"
+      },
+      "id": "f1a2b3c4-0006-4001-8001-000000000006",
+      "name": "Montar Histórico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  system_instruction: {\n    parts: [{\n      text: 'Você é Sofia, assistente virtual do restaurante Casa Aurora. Responda SEMPRE em português de forma amigável, calorosa e profissional.\\n\\nSobre reservas: colete nome completo, data (DD/MM/AAAA), horário, número de pessoas e observações. Quando tiver todos os dados, inclua no início da resposta: RESERVA_JSON:{\"nome\":\"...\",\"data\":\"DD/MM/AAAA\",\"horario\":\"HH:MM\",\"pessoas\":N,\"observacoes\":\"...\"}.\\n\\nSe o cliente pedir explicitamente para falar com um atendente humano, inclua no início da resposta: ATENDENTE_HUMANO.\\n\\nNunca invente informações. Se não souber algo, diga que vai verificar.'\n    }]\n  },\n  contents: [\n    ...$json.historico,\n    { role: 'user', parts: [{ text: $json.mensagem }] }\n  ],\n  generationConfig: {\n    temperature: 0.7,\n    maxOutputTokens: 1024\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0007-4001-8001-000000000007",
+      "name": "Sofia — Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1640, 300],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4JxZSKaMdO8oSwA5",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiData = $input.first().json;\nconst { chatId, mensagem } = $('Extrair Mensagem').first().json;\n\n// Extrair texto da resposta do Gemini\nlet textoCompleto = '';\ntry {\n  textoCompleto = geminiData.candidates[0].content.parts[0].text || '';\n} catch {\n  textoCompleto = 'Desculpe, não consegui processar sua mensagem. Pode repetir?';\n}\n\nlet tipo = 'conversa';\nlet textoResposta = textoCompleto;\nlet dadosReserva = null;\n\n// Detectar solicitação de atendente humano\nif (textoCompleto.includes('ATENDENTE_HUMANO')) {\n  tipo = 'humano';\n  textoResposta = textoCompleto\n    .replace(/ATENDENTE_HUMANO(?::\\{[^}]*\\})?/g, '')\n    .trim();\n  if (!textoResposta) {\n    textoResposta = 'Entendido! Vou te conectar com um de nossos atendentes agora. Aguarde um momento! 😊';\n  }\n}\n\n// Detectar criação de reserva (não sobrescreve se já for humano)\nif (tipo !== 'humano' && textoCompleto.includes('RESERVA_JSON:')) {\n  tipo = 'reserva';\n  const match = textoCompleto.match(/RESERVA_JSON:(\\{[^}]+\\})/);\n  if (match) {\n    try { dadosReserva = JSON.parse(match[1]); } catch { }\n  }\n  textoResposta = textoCompleto.replace(/RESERVA_JSON:\\{[^}]+\\}/g, '').trim();\n  if (!textoResposta) {\n    textoResposta = 'Perfeito! Registrei sua reserva com sucesso. Em breve você receberá a confirmação! 🎉';\n  }\n}\n\nreturn [{ json: { chatId, mensagem, textoResposta, tipo, dadosReserva } }];"
+      },
+      "id": "f1a2b3c4-0008-4001-8001-000000000008",
+      "name": "Processar Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ 'historico:' + $json.chatId }}",
+        "value": "={{ JSON.stringify([\n  ...$('Montar Histórico').first().json.historico,\n  { role: 'user', parts: [{ text: $json.mensagem }] },\n  { role: 'model', parts: [{ text: $json.textoResposta }] }\n]) }}",
+        "expire": true,
+        "ttl": 86400,
+        "options": {}
+      },
+      "id": "f1a2b3c4-0009-4001-8001-000000000009",
+      "name": "Redis SET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2120, 300],
+      "credentials": {
+        "redis": {
+          "id": "83G677gqgZUn1I8v",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $('Processar Resposta').first().json.tipo }}",
+        "rules": {
+          "rules": [
+            { "value2": "reserva" },
+            { "value2": "humano" }
+          ]
+        },
+        "fallbackOutput": "extra"
+      },
+      "id": "f1a2b3c4-0010-4001-8001-000000000010",
+      "name": "Tipo de Ação",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [2360, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3334/api/webhooks/n8n/response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0011-4001-8001-000000000011",
+      "name": "Registrar Reserva CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2600, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/sendText",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chatId: $('Extrair Mensagem').first().json.chatId,\n  text: $('Processar Resposta').first().json.textoResposta,\n  session: 'default'\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0012-4001-8001-000000000012",
+      "name": "WAHA Confirma Reserva",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2840, 160],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ud79kfNRiIutDWYl",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3334/api/webhooks/n8n/response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: 'ATENDENTE_HUMANO:{\"acao\":\"transferir\",\"motivo\":\"solicitado pelo cliente\"}',\n  chatId: $('Extrair Mensagem').first().json.chatId\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0013-4001-8001-000000000013",
+      "name": "Transferir Humano CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2600, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/sendText",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chatId: $('Extrair Mensagem').first().json.chatId,\n  text: $('Processar Resposta').first().json.textoResposta,\n  session: 'default'\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0014-4001-8001-000000000014",
+      "name": "WAHA Avisa Transferência",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2840, 360],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ud79kfNRiIutDWYl",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3334/api/webhooks/n8n/response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0015-4001-8001-000000000015",
+      "name": "Registrar Resposta CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2600, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/sendText",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chatId: $('Extrair Mensagem').first().json.chatId,\n  text: $('Processar Resposta').first().json.textoResposta,\n  session: 'default'\n}) }}",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0016-4001-8001-000000000016",
+      "name": "WAHA Responde",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2840, 560],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ud79kfNRiIutDWYl",
+          "name": "WAHA account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Menu Cliente": {
+      "main": [
+        [{ "node": "Extrair Mensagem", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extrair Mensagem": {
+      "main": [
+        [{ "node": "Registrar no CRM", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar no CRM": {
+      "main": [
+        [{ "node": "Tem Atendente?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tem Atendente?": {
+      "main": [
+        [],
+        [{ "node": "Redis GET", "type": "main", "index": 0 }]
+      ]
+    },
+    "Redis GET": {
+      "main": [
+        [{ "node": "Montar Histórico", "type": "main", "index": 0 }]
+      ]
+    },
+    "Montar Histórico": {
+      "main": [
+        [{ "node": "Sofia — Gemini", "type": "main", "index": 0 }]
+      ]
+    },
+    "Sofia — Gemini": {
+      "main": [
+        [{ "node": "Processar Resposta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Processar Resposta": {
+      "main": [
+        [{ "node": "Redis SET", "type": "main", "index": 0 }]
+      ]
+    },
+    "Redis SET": {
+      "main": [
+        [{ "node": "Tipo de Ação", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tipo de Ação": {
+      "main": [
+        [{ "node": "Registrar Reserva CRM", "type": "main", "index": 0 }],
+        [{ "node": "Transferir Humano CRM", "type": "main", "index": 0 }],
+        [{ "node": "Registrar Resposta CRM", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar Reserva CRM": {
+      "main": [
+        [{ "node": "WAHA Confirma Reserva", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transferir Humano CRM": {
+      "main": [
+        [{ "node": "WAHA Avisa Transferência", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar Resposta CRM": {
+      "main": [
+        [{ "node": "WAHA Responde", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "2",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "crm-casa-aurora"
+  },
+  "id": "waha-crm-sofia-v2",
+  "tags": [
+    { "createdAt": "2026-06-22", "updatedAt": "2026-06-22", "id": "tag-crm", "name": "CRM" }
+  ]
+}

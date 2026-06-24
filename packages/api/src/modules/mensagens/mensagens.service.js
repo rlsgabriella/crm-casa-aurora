@@ -22,21 +22,27 @@ export async function registrarMensagem(conversaId, { remetente, conteudo, tipo 
     data: { conversaId, remetente, conteudo, tipo },
   })
 
-  // Atualizar timestamp da conversa para ordenação por última mensagem
-  await prisma.conversa.update({
-    where: { id: conversaId },
-    data: { atualizadoEm: new Date() },
-  })
+  const updateData = { atualizadoEm: new Date() }
+
+  // Atendente respondendo a conversa "aguardando" → retomar status aberta
+  if (remetente === 'atendente' && conversa.status === 'aguardando') {
+    updateData.status = 'aberta'
+  }
+
+  await prisma.conversa.update({ where: { id: conversaId }, data: updateData })
 
   // Enviar via WhatsApp se for do atendente e cliente tiver telefone
+  let wahaError = null
   if (remetente === 'atendente' && conversa.cliente?.telefone) {
     await enviarMensagem({
       telefone: conversa.cliente.telefone,
       mensagem: conteudo,
     }).catch(err => {
       console.error('[WAHA] Falha ao enviar mensagem:', err.message)
+      wahaError = err.message
     })
   }
 
+  if (wahaError) return { ...mensagem, wahaError }
   return mensagem
 }

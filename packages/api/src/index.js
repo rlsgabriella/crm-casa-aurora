@@ -23,16 +23,19 @@ app.use(express.json())
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'crm-api', port: PORT }))
 
+// Rotas públicas (sem auth Clerk) — PRIMEIRO, antes de qualquer middleware de auth
+app.use('/api/webhooks', webhooksRoutes)
+
+// Rotas protegidas — auth é aplicado dentro de cada router
 app.use('/api/clientes', clientesRoutes)
 app.use('/api/reservas', reservasRoutes)
 app.use('/api/mesas', mesasRoutes)
 app.use('/api/conversas', conversasRoutes)
 app.use('/api/atendentes', equipeRoutes)
-app.use('/api/webhooks', webhooksRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 
 app.use(errorHandler)
 
-app.listen(PORT, () => {
-  console.log(`CRM API rodando na porta ${PORT}`)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`CRM API rodando na porta ${PORT} (0.0.0.0 — aceita conexões externas)`)
 })

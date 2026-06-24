@@ -2,9 +2,16 @@ node_modules/
 dist/
 .env
 .env.local
+.env*.local
 *.log
 .DS_Store
 Thumbs.db
+
+# Build artifacts
 packages/api/prisma/migrations/
 packages/dashboard/.next/
 packages/dashboard/out/
+packages/dashboard/tsconfig.tsbuildinfo
+
+# Claude Code (configurações locais do editor)
+.claude/

@@ -17,8 +17,7 @@ export default function AtendimentoPage() {
   const [loading, setLoading] = useState(true)
   const [conversaSelecionada, setConversaSelecionada] = useState<ConversaItem | null>(null)
 
-  const { updates } = useRealtimeConversas()
-
+  // Definir ANTES de passar ao hook para evitar uso antes da declaração
   const carregarConversas = useCallback(async () => {
     setLoading(true)
     try {
@@ -30,9 +29,11 @@ export default function AtendimentoPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const { updates } = useRealtimeConversas(carregarConversas)
+
   useEffect(() => { carregarConversas() }, [carregarConversas])
 
-  // Aplicar atualizações em tempo real
+  // Aplicar atualizações em tempo real (apenas quando Supabase Realtime está ativo)
   useEffect(() => {
     if (updates.length === 0) return
     const ultimo = updates[updates.length - 1] as any

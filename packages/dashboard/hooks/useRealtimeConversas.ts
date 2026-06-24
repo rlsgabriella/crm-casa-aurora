@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState, useEffect, useRef } from 'react'
+import { supabase, supabaseConfigured } from '@/lib/supabase'
 
 export interface RealtimeConversa {
   id: string
@@ -15,11 +15,16 @@ interface UseRealtimeConversasReturn {
   isConnected: boolean
 }
 
-export function useRealtimeConversas(): UseRealtimeConversasReturn {
+export function useRealtimeConversas(onPoll?: () => void): UseRealtimeConversasReturn {
   const [updates, setUpdates] = useState<RealtimeConversa[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const onPollRef = useRef(onPoll)
+  useEffect(() => { onPollRef.current = onPoll }, [onPoll])
 
+  // Supabase Realtime
   useEffect(() => {
+    if (!supabaseConfigured) return
+
     const channel = supabase
       .channel('conversas:all')
       .on(
@@ -42,6 +47,13 @@ export function useRealtimeConversas(): UseRealtimeConversasReturn {
 
     return () => { supabase.removeChannel(channel) }
   }, [])
+
+  // Polling fallback quando Supabase não está configurado
+  useEffect(() => {
+    if (supabaseConfigured) return
+    const interval = setInterval(() => onPollRef.current?.(), 5000)
+    return () => clearInterval(interval)
+  }, []) // roda uma vez; usa ref para callback sempre atualizado
 
   return { updates, isConnected }
 }

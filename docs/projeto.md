@@ -48,6 +48,25 @@
 29. Dashboard: página /dashboard/equipe — tabela de atendentes + modal criação + toggle status
 30. Dashboard: StatCard "Conversas Abertas" + mini lista no dashboard principal
 
+### Sessão 5 — Integração n8n + correções
+
+31. Webhooks (/api/webhooks/*) movidos para ANTES do middleware Clerk (acesso público)
+32. src/lib/waha.js corrigido: bug do prefixo "+" no chatId
+33. Adaptação do workflow n8n existente (Casa Aurora Menu Interativo) para integrar com CRM
+34. Adição de 6 nodes novos ao workflow: Registrar no CRM, Tem Atendente?, Tipo de Ação (Switch), Registrar Reserva CRM, Transferir Humano CRM, Registrar Resposta CRM
+35. Remoção do node Google Sheets (reservas agora vão pro banco via API)
+36. Correção do node "Extrair Mensagem": payload WAHA vem em item.body.payload
+37. Correção do node "Processar Resposta": compatibilidade com output do node nativo Gemini (content.parts[0].text)
+38. Substituição do node HTTP Request do Gemini por node nativo "Message a Model" do n8n
+39. Correção das URLs dos nodes CRM: localhost → host.docker.internal:3334 (Docker → host)
+40. Correção das URLs dos nodes WAHA: usar waha:3000 (dentro da rede Docker)
+41. Correção dos campos Chat Id e Text nos nodes WAHA: referenciar Extrair Mensagem e Processar Resposta
+42. Correção do Switch "Tipo de Ação": Fallback Output de 0 para 2 (terceira saída para conversas normais)
+43. Correção do .env: remoção de \r (carriage return Windows) com sed
+44. Correção do .env: DATABASE_URL revertida para conexão direta (pooler não funciona no free tier sem IPv4 add-on)
+
+
+
 ### Sessão 6 — Correção de reservas WhatsApp + Google Calendar
 
 45. Diagnóstico e correção do bug: reservas via WhatsApp não eram salvas no banco
@@ -69,24 +88,6 @@
     - `credentials.json` adicionado ao `.gitignore`
 49. Prompt da Sofia atualizado (versionId 5): coleta email como 5° campo opcional, formato de data no RESERVA_JSON alterado para AAAA-MM-DD
 50. `googleapis@^173.0.0` adicionado às dependências do `packages/api`
-
-### Sessão 5 — Integração n8n + correções
-
-31. Webhooks (/api/webhooks/*) movidos para ANTES do middleware Clerk (acesso público)
-32. src/lib/waha.js corrigido: bug do prefixo "+" no chatId
-33. Adaptação do workflow n8n existente (Casa Aurora Menu Interativo) para integrar com CRM
-34. Adição de 6 nodes novos ao workflow: Registrar no CRM, Tem Atendente?, Tipo de Ação (Switch), Registrar Reserva CRM, Transferir Humano CRM, Registrar Resposta CRM
-35. Remoção do node Google Sheets (reservas agora vão pro banco via API)
-36. Correção do node "Extrair Mensagem": payload WAHA vem em item.body.payload
-37. Correção do node "Processar Resposta": compatibilidade com output do node nativo Gemini (content.parts[0].text)
-38. Substituição do node HTTP Request do Gemini por node nativo "Message a Model" do n8n
-39. Correção das URLs dos nodes CRM: localhost → host.docker.internal:3334 (Docker → host)
-40. Correção das URLs dos nodes WAHA: usar waha:3000 (dentro da rede Docker)
-41. Correção dos campos Chat Id e Text nos nodes WAHA: referenciar Extrair Mensagem e Processar Resposta
-42. Correção do Switch "Tipo de Ação": Fallback Output de 0 para 2 (terceira saída para conversas normais)
-43. Correção do .env: remoção de \r (carriage return Windows) com sed
-44. Correção do .env: DATABASE_URL revertida para conexão direta (pooler não funciona no free tier sem IPv4 add-on)
-
 ---
 
 ## Fases do projeto — estado atual

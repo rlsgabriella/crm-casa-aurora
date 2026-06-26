@@ -13,5 +13,9 @@ packages/dashboard/.next/
 packages/dashboard/out/
 packages/dashboard/tsconfig.tsbuildinfo
 
+# Google Service Account credentials (nunca versionar)
+credentials.json
+packages/api/credentials.json
+
 # Claude Code (configurações locais do editor)
 .claude/

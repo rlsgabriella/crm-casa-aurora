@@ -1,6 +1,7 @@
 import prisma from '../../lib/prisma.js'
 import { enviarMensagem } from '../../lib/waha.js'
 import { atribuirConversaAuto } from '../conversas/conversas.service.js'
+import { criarEventoCalendar } from '../../lib/calendar.js'
 
 const DEFAULT_RESTAURANTE_ID = process.env.DEFAULT_RESTAURANTE_ID || ''
 
@@ -86,7 +87,7 @@ export async function processarMensagemWaha(payload) {
 }
 
 export async function processarRespostaN8n(payload) {
-  const { conteudo = '', telefone, conversaId, chatId } = payload
+  const { conteudo = '', telefone, conversaId, chatId, tipo, dadosReserva } = payload
 
   // Resolver conversa
   let conversa
@@ -109,12 +110,90 @@ export async function processarRespostaN8n(payload) {
   const wahaChatId = chatId ||
     (conversa.cliente?.telefone ? telefoneToChatId(conversa.cliente.telefone) : null)
 
-  // --- Token: ATENDENTE_HUMANO ---
+  // --- tipo: "reserva" com dadosReserva estruturado (caminho principal) ---
+  if (tipo === 'reserva' && dadosReserva) {
+    const dataStr = dadosReserva.data || ''
+    let dataReserva
+    if (dataStr.includes('/')) {
+      // Formato DD/MM/AAAA (gerado pelo Gemini)
+      const [dia, mes, ano] = dataStr.split('/')
+      dataReserva = new Date(`${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}T12:00:00.000Z`)
+    } else {
+      // Formato AAAA-MM-DD
+      dataReserva = new Date(`${dataStr}T12:00:00.000Z`)
+    }
+
+    const reserva = await prisma.reserva.create({
+      data: {
+        clienteId: conversa.clienteId,
+        data: dataReserva,
+        horario: dadosReserva.horario || dadosReserva.hora || '',
+        numPessoas: parseInt(dadosReserva.pessoas) || 1,
+        status: 'confirmada',
+        observacoes: dadosReserva.observacoes || 'Reserva criada via WhatsApp (Sofia)',
+      },
+    })
+
+    await prisma.mensagem.create({
+      data: { conversaId: conversa.id, remetente: 'bot', conteudo, tipo: 'texto' },
+    })
+    await prisma.conversa.update({
+      where: { id: conversa.id },
+      data: { atualizadoEm: new Date() },
+    })
+
+    try {
+      await criarEventoCalendar({
+        titulo: `Reserva - ${dadosReserva.nome} (${dadosReserva.pessoas} pessoas)`,
+        dataHora: reserva.data,
+        horario: dadosReserva.horario || reserva.horario,
+        duracao: 120,
+        descricao: `Cliente: ${dadosReserva.nome}\nPessoas: ${dadosReserva.pessoas}\nTelefone: ${chatId}\nObservações: ${dadosReserva.observacoes || 'Nenhuma'}\nReserva criada via WhatsApp`,
+        email: dadosReserva.email || null,
+      })
+    } catch (calendarError) {
+      console.error('[calendar] Erro ao criar evento:', calendarError.message)
+    }
+
+    return { ok: true, acao: 'reserva_criada', reservaId: reserva.id }
+  }
+
+  // --- tipo: "humano" (caminho principal) ---
+  if (tipo === 'humano') {
+    if (conteudo) {
+      await prisma.mensagem.create({
+        data: { conversaId: conversa.id, remetente: 'bot', conteudo, tipo: 'texto' },
+      })
+    }
+
+    await prisma.conversa.update({
+      where: { id: conversa.id },
+      data: { status: 'aguardando' },
+    })
+
+    const msgTransfer = 'Conversa transferida para atendente humano. Aguarde um momento.'
+    await prisma.mensagem.create({
+      data: { conversaId: conversa.id, remetente: 'bot', conteudo: msgTransfer, tipo: 'texto' },
+    })
+
+    if (wahaChatId) {
+      await enviarMensagem({ chatId: wahaChatId, texto: msgTransfer }).catch(err =>
+        console.error('[webhook n8n] WAHA transfer falhou:', err.message)
+      )
+    }
+
+    const resultado = await atribuirConversaAuto(conversa.id)
+    await prisma.conversa.update({
+      where: { id: conversa.id },
+      data: { atualizadoEm: new Date() },
+    })
+    return { ok: true, acao: 'aguardando_humano', atendente: resultado?.atendente ?? null }
+  }
+
+  // --- Fallback: token ATENDENTE_HUMANO no conteudo (retrocompatibilidade) ---
   if (conteudo.includes('ATENDENTE_HUMANO')) {
-    // Remove o token e qualquer metadado JSON opcional (ex: ATENDENTE_HUMANO:{"acao":"..."})
     const conteudoLimpo = conteudo.replace(/ATENDENTE_HUMANO(?::\{[^}]*\})?/g, '').trim()
 
-    // Salvar mensagem da Sofia (sem o token) se tiver conteúdo real
     if (conteudoLimpo) {
       await prisma.mensagem.create({
         data: { conversaId: conversa.id, remetente: 'bot', conteudo: conteudoLimpo, tipo: 'texto' },
@@ -131,7 +210,6 @@ export async function processarRespostaN8n(payload) {
       data: { conversaId: conversa.id, remetente: 'bot', conteudo: msgTransfer, tipo: 'texto' },
     })
 
-    // Enviar notificação de transferência ao cliente via WAHA
     if (wahaChatId) {
       await enviarMensagem({ chatId: wahaChatId, texto: msgTransfer }).catch(err =>
         console.error('[webhook n8n] WAHA transfer falhou:', err.message)
@@ -146,7 +224,7 @@ export async function processarRespostaN8n(payload) {
     return { ok: true, acao: 'aguardando_humano', atendente: resultado?.atendente ?? null }
   }
 
-  // --- Token: RESERVA_JSON ---
+  // --- Fallback: token RESERVA_JSON no conteudo (retrocompatibilidade) ---
   if (conteudo.includes('RESERVA_JSON')) {
     const match = conteudo.match(/RESERVA_JSON:(\{.*?\})/s)
     if (match) {

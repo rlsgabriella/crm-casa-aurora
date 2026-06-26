@@ -27,58 +27,14 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:3334/api/webhooks/waha",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ from: $json.chatId, body: $json.mensagem, session: 'default' }) }}",
-        "options": {
-          "response": {
-            "response": {
-              "fullResponse": false
-            }
-          }
-        }
-      },
-      "id": "f1a2b3c4-0003-4001-8001-000000000003",
-      "name": "Registrar no CRM",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.data.temAtendente }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "f1a2b3c4-0004-4001-8001-000000000004",
-      "name": "Tem Atendente?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [920, 300]
-    },
-    {
-      "parameters": {
         "operation": "get",
-        "key": "={{ 'historico:' + $('Extrair Mensagem').first().json.chatId }}"
+        "key": "={{ 'historico:' + $json.chatId }}"
       },
       "id": "f1a2b3c4-0005-4001-8001-000000000005",
       "name": "Redis GET",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [1160, 300],
+      "position": [680, 300],
       "credentials": {
         "redis": {
           "id": "83G677gqgZUn1I8v",
@@ -94,7 +50,7 @@
       "name": "Montar Histórico",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1400, 300]
+      "position": [920, 300]
     },
     {
       "parameters": {
@@ -104,14 +60,14 @@
         "genericAuthType": "googlePalmApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  system_instruction: {\n    parts: [{\n      text: 'Você é Sofia, assistente virtual do restaurante Casa Aurora. Responda SEMPRE em português de forma amigável, calorosa e profissional.\\n\\nSobre reservas: colete nome completo, data (DD/MM/AAAA), horário, número de pessoas e observações. Quando tiver todos os dados, inclua no início da resposta: RESERVA_JSON:{\"nome\":\"...\",\"data\":\"DD/MM/AAAA\",\"horario\":\"HH:MM\",\"pessoas\":N,\"observacoes\":\"...\"}.\\n\\nSe o cliente pedir explicitamente para falar com um atendente humano, inclua no início da resposta: ATENDENTE_HUMANO.\\n\\nNunca invente informações. Se não souber algo, diga que vai verificar.'\n    }]\n  },\n  contents: [\n    ...$json.historico,\n    { role: 'user', parts: [{ text: $json.mensagem }] }\n  ],\n  generationConfig: {\n    temperature: 0.7,\n    maxOutputTokens: 1024\n  }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  system_instruction: {\n    parts: [{\n      text: 'Você é Sofia, assistente virtual do restaurante Casa Aurora. Responda SEMPRE em português de forma amigável, calorosa e profissional.\\n\\nSobre reservas: colete os dados UM POR VEZ nesta ordem:\\n1. Nome completo\\n2. Data (DD/MM/AAAA)\\n3. Horário\\n4. Quantidade de pessoas\\n5. Email (OPCIONAL — pergunte: Gostaria de receber o convite da reserva por email? Se sim, me informe. Se preferir, confirmo tudo por aqui mesmo!)\\n\\nSomente quando tiver os 4 dados obrigatórios, confirme o resumo e escreva na PRIMEIRA LINHA:\\nRESERVA_JSON:{\"nome\":\"...\",\"data\":\"AAAA-MM-DD\",\"horario\":\"HH:00\",\"pessoas\":N,\"observacoes\":\"\",\"email\":\"\"}\\n\\nSe o cliente pedir explicitamente para falar com um atendente humano, inclua no início da resposta: ATENDENTE_HUMANO.\\n\\nNunca invente informações. Se não souber algo, diga que vai verificar.'\n    }]\n  },\n  contents: [\n    ...$json.historico,\n    { role: 'user', parts: [{ text: $json.mensagem }] }\n  ],\n  generationConfig: {\n    temperature: 0.7,\n    maxOutputTokens: 1024\n  }\n}) }}",
         "options": {}
       },
       "id": "f1a2b3c4-0007-4001-8001-000000000007",
       "name": "Sofia — Gemini",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1640, 300],
+      "position": [1160, 300],
       "credentials": {
         "googlePalmApi": {
           "id": "4JxZSKaMdO8oSwA5",
@@ -127,7 +83,7 @@
       "name": "Processar Resposta",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1880, 300]
+      "position": [1400, 300]
     },
     {
       "parameters": {
@@ -142,13 +98,40 @@
       "name": "Redis SET",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [2120, 300],
+      "position": [1640, 300],
       "credentials": {
         "redis": {
           "id": "83G677gqgZUn1I8v",
           "name": "Redis account"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3334/api/webhooks/waha",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $('Extrair Mensagem').first().json.chatId, body: $('Extrair Mensagem').first().json.mensagem, session: 'default' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "f1a2b3c4-0003-4001-8001-000000000003",
+      "name": "Registrar no CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1880, 300]
     },
     {
       "parameters": {
@@ -166,7 +149,7 @@
       "name": "Tipo de Ação",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
-      "position": [2360, 300]
+      "position": [2120, 300]
     },
     {
       "parameters": {
@@ -180,14 +163,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId,\n  tipo: $('Processar Resposta').first().json.tipo,\n  dadosReserva: $('Processar Resposta').first().json.dadosReserva\n}) }}",
         "options": {}
       },
       "id": "f1a2b3c4-0011-4001-8001-000000000011",
       "name": "Registrar Reserva CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2600, 160]
+      "position": [2360, 160]
     },
     {
       "parameters": {
@@ -204,7 +187,7 @@
       "name": "WAHA Confirma Reserva",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2840, 160],
+      "position": [2600, 160],
       "credentials": {
         "httpHeaderAuth": {
           "id": "Ud79kfNRiIutDWYl",
@@ -224,14 +207,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: 'ATENDENTE_HUMANO:{\"acao\":\"transferir\",\"motivo\":\"solicitado pelo cliente\"}',\n  chatId: $('Extrair Mensagem').first().json.chatId\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId,\n  tipo: 'humano'\n}) }}",
         "options": {}
       },
       "id": "f1a2b3c4-0013-4001-8001-000000000013",
       "name": "Transferir Humano CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2600, 360]
+      "position": [2360, 360]
     },
     {
       "parameters": {
@@ -248,7 +231,7 @@
       "name": "WAHA Avisa Transferência",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2840, 360],
+      "position": [2600, 360],
       "credentials": {
         "httpHeaderAuth": {
           "id": "Ud79kfNRiIutDWYl",
@@ -268,14 +251,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  conversaId: $('Registrar no CRM').first().json.data.conversaId,\n  conteudo: $('Processar Resposta').first().json.textoResposta,\n  chatId: $('Extrair Mensagem').first().json.chatId,\n  tipo: 'conversa'\n}) }}",
         "options": {}
       },
       "id": "f1a2b3c4-0015-4001-8001-000000000015",
       "name": "Registrar Resposta CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2600, 560]
+      "position": [2360, 560]
     },
     {
       "parameters": {
@@ -292,13 +275,30 @@
       "name": "WAHA Responde",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2840, 560],
+      "position": [2600, 560],
       "credentials": {
         "httpHeaderAuth": {
           "id": "Ud79kfNRiIutDWYl",
           "name": "WAHA account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.data.temAtendente }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "f1a2b3c4-0004-4001-8001-000000000004",
+      "name": "Tem Atendente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [440, 560]
     }
   ],
   "connections": {
@@ -309,17 +309,6 @@
     },
     "Extrair Mensagem": {
       "main": [
-        [{ "node": "Registrar no CRM", "type": "main", "index": 0 }]
-      ]
-    },
-    "Registrar no CRM": {
-      "main": [
-        [{ "node": "Tem Atendente?", "type": "main", "index": 0 }]
-      ]
-    },
-    "Tem Atendente?": {
-      "main": [
-        [],
         [{ "node": "Redis GET", "type": "main", "index": 0 }]
       ]
     },
@@ -344,6 +333,11 @@
       ]
     },
     "Redis SET": {
+      "main": [
+        [{ "node": "Registrar no CRM", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar no CRM": {
       "main": [
         [{ "node": "Tipo de Ação", "type": "main", "index": 0 }]
       ]
@@ -377,13 +371,13 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "2",
+  "versionId": "5",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "crm-casa-aurora"
   },
   "id": "waha-crm-sofia-v2",
   "tags": [
-    { "createdAt": "2026-06-22", "updatedAt": "2026-06-22", "id": "tag-crm", "name": "CRM" }
+    { "createdAt": "2026-06-22", "updatedAt": "2026-06-24", "id": "tag-crm", "name": "CRM" }
   ]
 }
